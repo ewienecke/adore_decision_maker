@@ -13,7 +13,8 @@
 
 #include "behaviours.hpp"
 
-#include "planning/planning_helpers.hpp" // your existing helpers
+//#include "planning/planning_helpers.hpp" // your existing helpers
+#include "obstacle_avoidance_condition.hpp" // for blocker detection and oncoming conflict checking
 
 
 namespace

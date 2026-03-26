@@ -21,6 +21,8 @@
 #include "domain.hpp"
 #include "dynamics/comfort_settings.hpp"
 #include "planning/trajectory_planner.hpp"
+#include "planning/path_shift.hpp"
+#include "planning/planning_helpers.hpp"
 
 namespace adore
 {

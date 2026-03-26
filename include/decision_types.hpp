@@ -18,6 +18,8 @@
 
 #include "dynamics/comfort_settings.hpp"
 #include "planning/trajectory_planner.hpp"
+#include "planning/path_shift.hpp"
+
 
 namespace adore
 {
@@ -30,33 +32,6 @@ struct Decision
   std::optional<bool>                         assistance_request;
 };
 
-struct PathShiftParams
-{
-  double min_object_ahead        = 6.0;
-  double max_object_ahead        = 35.0;
-  double max_object_speed        = 0.5;   // [m/s] maximum speed of objects to consider for path shifting
-  double static_clearance        = 0.4;   // [m] additional clearance to the object when calculating required shift 
-  double front_clearance         = 4.0;   // [m] safty distance in front of the object when full shift should be reached
-  double rear_clearance          = 3.0;   // [m] safty distance behind the object until the shift should be held
-  double approach_length         = 15.0;  // [m] length of the approach phase before reaching the object; higher value leads to earlier and smoother shifts
-  double return_length           = 18.0;  
-  double target_speed            = 3.0;   // [m/s] target speed during the shift maneuver
-  double lookahead_length        = 50.0;  // [m] length of the path ahead to consider for shift decisions
-  double max_shift_left          = 2.0;
-  double route_overlap_slack     = 0.5;   // [m] tolerance for considering an object as overlapping the route
-  double oncoming_front_buffer   = 20.0;  // [m] buffer for oncoming traffic in front
-  double oncoming_rear_buffer    = 5.0;   // [m] buffer for oncoming traffic behind
-  double min_oncoming_angle_diff = 2.0;   // [rad] minimum angle difference to route for considering a vehicle as oncoming
-
-  double prediction_time_step              = 0.1;  // [s]
-  double prediction_time_horizon           = 6.0;  // [s]
-  double min_ego_prediction_speed          = 1.0;  // [m/s]
-  double min_oncoming_route_speed          = 0.2;  // [m/s]
-  double max_stationary_conflict_route_speed = 0.3; // [m/s]
-  double oncoming_vehicle_s_margin         = 1.0;  // [m]
-  double static_oncoming_s_margin          = 1.0;  // [m]
-  double ego_vehicle_s_margin              = 1.0;  // [m]
-};
 
 struct PlanningParams
 {
@@ -66,7 +41,7 @@ struct PlanningParams
   std::map<std::string, double>                   planner_settings;
   int                                             v2x_id = 0;
 
-  PathShiftParams                                  path_shift;
+  planner::PathShiftParams                        path_shift;
 };
 
 // define condition parameters

@@ -62,6 +62,8 @@ set(CORE_SRC
   src/domain.cpp
   src/conditions.cpp
   src/rules.cpp
+  #new for obstacle avoidance
+  src/obstacle_avoidance_condition.cpp
 )
 
 # -------------------------
