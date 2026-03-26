@@ -76,4 +76,5 @@ suggested_trajectory_accepted( const Domain& d, const ConditionParams& )
 {
   return d.suggested_trajectory_acceptance;
 }
+
 } // namespace adore::conditions

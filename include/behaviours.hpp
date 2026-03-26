@@ -57,7 +57,7 @@ make_behaviour_map()
     {           "follow_route",           &follow_route },
     {        "safety_corridor",        &safety_corridor },
     {     "request_assistance",     &request_assistance },
-    {           "minimum_risk",           &minimum_risk },
+    {           "minimum_risk",           &minimum_risk }
   };
 }
 

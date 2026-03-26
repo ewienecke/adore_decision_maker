@@ -30,6 +30,34 @@ struct Decision
   std::optional<bool>                         assistance_request;
 };
 
+struct PathShiftParams
+{
+  double min_object_ahead        = 6.0;
+  double max_object_ahead        = 35.0;
+  double max_object_speed        = 0.5;   // [m/s] maximum speed of objects to consider for path shifting
+  double static_clearance        = 0.4;   // [m] additional clearance to the object when calculating required shift 
+  double front_clearance         = 4.0;   // [m] safty distance in front of the object when full shift should be reached
+  double rear_clearance          = 3.0;   // [m] safty distance behind the object until the shift should be held
+  double approach_length         = 15.0;  // [m] length of the approach phase before reaching the object; higher value leads to earlier and smoother shifts
+  double return_length           = 18.0;  
+  double target_speed            = 3.0;   // [m/s] target speed during the shift maneuver
+  double lookahead_length        = 50.0;  // [m] length of the path ahead to consider for shift decisions
+  double max_shift_left          = 2.0;
+  double route_overlap_slack     = 0.5;   // [m] tolerance for considering an object as overlapping the route
+  double oncoming_front_buffer   = 20.0;  // [m] buffer for oncoming traffic in front
+  double oncoming_rear_buffer    = 5.0;   // [m] buffer for oncoming traffic behind
+  double min_oncoming_angle_diff = 2.0;   // [rad] minimum angle difference to route for considering a vehicle as oncoming
+
+  double prediction_time_step              = 0.1;  // [s]
+  double prediction_time_horizon           = 6.0;  // [s]
+  double min_ego_prediction_speed          = 1.0;  // [m/s]
+  double min_oncoming_route_speed          = 0.2;  // [m/s]
+  double max_stationary_conflict_route_speed = 0.3; // [m/s]
+  double oncoming_vehicle_s_margin         = 1.0;  // [m]
+  double static_oncoming_s_margin          = 1.0;  // [m]
+  double ego_vehicle_s_margin              = 1.0;  // [m]
+};
+
 struct PlanningParams
 {
   planner::TrajectoryPlanner                      planner;
@@ -37,6 +65,8 @@ struct PlanningParams
   std::shared_ptr<dynamics::ComfortSettings>      comfort_settings;
   std::map<std::string, double>                   planner_settings;
   int                                             v2x_id = 0;
+
+  PathShiftParams                                  path_shift;
 };
 
 // define condition parameters
@@ -136,6 +166,87 @@ load_params( rclcpp::Node& node )
   planning_params.planner.set_parameters( planning_params.planner_settings );
 
   planning_params.v2x_id = node.declare_parameter( "v2x_id", planning_params.v2x_id );
+
+
+  // Path shift parameters for static obstacle avoidance
+  // overwrite default values with parameters from the parameter server if available
+
+    planning_params.path_shift.min_object_ahead =
+      node.declare_parameter( "path_shift.min_object_ahead",
+                              planning_params.path_shift.min_object_ahead );
+  planning_params.path_shift.max_object_ahead =
+      node.declare_parameter( "path_shift.max_object_ahead",
+                              planning_params.path_shift.max_object_ahead );
+  planning_params.path_shift.max_object_speed =
+      node.declare_parameter( "path_shift.max_object_speed",
+                              planning_params.path_shift.max_object_speed );
+  planning_params.path_shift.static_clearance =
+      node.declare_parameter( "path_shift.static_clearance",
+                              planning_params.path_shift.static_clearance );
+  planning_params.path_shift.front_clearance =
+      node.declare_parameter( "path_shift.front_clearance",
+                              planning_params.path_shift.front_clearance );
+  planning_params.path_shift.rear_clearance =
+      node.declare_parameter( "path_shift.rear_clearance",
+                              planning_params.path_shift.rear_clearance );
+  planning_params.path_shift.approach_length =
+      node.declare_parameter( "path_shift.approach_length",
+                              planning_params.path_shift.approach_length );
+  planning_params.path_shift.return_length =
+      node.declare_parameter( "path_shift.return_length",
+                              planning_params.path_shift.return_length );
+  planning_params.path_shift.target_speed =
+      node.declare_parameter( "path_shift.target_speed",
+                              planning_params.path_shift.target_speed );
+  planning_params.path_shift.lookahead_length =
+      node.declare_parameter( "path_shift.lookahead_length",
+                              planning_params.path_shift.lookahead_length );
+  planning_params.path_shift.max_shift_left =
+      node.declare_parameter( "path_shift.max_shift_left",
+                              planning_params.path_shift.max_shift_left );
+  planning_params.path_shift.route_overlap_slack =
+      node.declare_parameter( "path_shift.route_overlap_slack",
+                              planning_params.path_shift.route_overlap_slack );
+  planning_params.path_shift.oncoming_front_buffer =
+      node.declare_parameter( "path_shift.oncoming_front_buffer",
+                              planning_params.path_shift.oncoming_front_buffer );
+  planning_params.path_shift.oncoming_rear_buffer =
+      node.declare_parameter( "path_shift.oncoming_rear_buffer",
+                              planning_params.path_shift.oncoming_rear_buffer );
+  planning_params.path_shift.min_oncoming_angle_diff =
+      node.declare_parameter( "path_shift.min_oncoming_angle_diff",
+                              planning_params.path_shift.min_oncoming_angle_diff );
+
+
+  planning_params.path_shift.ego_vehicle_s_margin =
+    node.declare_parameter( "path_shift.ego_vehicle_s_margin",
+                            planning_params.path_shift.ego_vehicle_s_margin );
+
+  planning_params.path_shift.oncoming_vehicle_s_margin =
+      node.declare_parameter( "path_shift.oncoming_vehicle_s_margin",
+                              planning_params.path_shift.oncoming_vehicle_s_margin );
+
+  planning_params.path_shift.max_stationary_conflict_route_speed =
+      node.declare_parameter( "path_shift.max_stationary_conflict_route_speed",
+                              planning_params.path_shift.max_stationary_conflict_route_speed );
+
+  planning_params.path_shift.prediction_time_step =
+      node.declare_parameter( "path_shift.prediction_time_step",
+                              planning_params.path_shift.prediction_time_step );
+
+  planning_params.path_shift.prediction_time_horizon =
+      node.declare_parameter( "path_shift.prediction_time_horizon",
+                              planning_params.path_shift.prediction_time_horizon );
+
+  planning_params.path_shift.min_ego_prediction_speed =
+      node.declare_parameter( "path_shift.min_ego_prediction_speed",
+                              planning_params.path_shift.min_ego_prediction_speed );
+
+  planning_params.path_shift.min_oncoming_route_speed =
+      node.declare_parameter( "path_shift.min_oncoming_route_speed",
+                              planning_params.path_shift.min_oncoming_route_speed );
+
+                              
 
   // ---------------------------------------------------------------------------------------------------------
   // -------------------------------------------- Domain -----------------------------------------------------

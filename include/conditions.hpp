@@ -50,7 +50,7 @@ make_condition_map()
     {               "route_available",               route_available },
     {               "need_assistance",               need_assistance },
     {       "sent_assistance_request",       sent_assistance_request },
-    { "suggested_trajectory_accepted", suggested_trajectory_accepted },
+    { "suggested_trajectory_accepted", suggested_trajectory_accepted }
   };
 }
 

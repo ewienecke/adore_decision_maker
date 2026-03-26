@@ -15,6 +15,26 @@
 
 #include "planning/planning_helpers.hpp" // your existing helpers
 
+
+namespace
+{
+enum class AvoidanceState
+{
+  FOLLOW_ROUTE,
+  WAIT_FOR_ONCOMING,
+  AVOID_STATIC_OBJECT
+};
+
+struct AvoidanceContext
+{
+  AvoidanceState                 state = AvoidanceState::FOLLOW_ROUTE;
+  bool                           has_candidate = false;
+  adore::planner::PathShiftCandidate candidate;
+};
+
+AvoidanceContext g_avoidance_ctx;
+} // namespace
+
 namespace adore::behaviours
 {
 Decision
@@ -56,22 +76,265 @@ follow_reference( const Domain& domain, PlanningParams& planning_tools )
   return out;
 }
 
+// Decision
+// follow_route( const Domain& domain, PlanningParams& planning_tools )
+// {
+//   Decision out;
+//   auto     route_with_signal = domain.route.value();
+//   for( auto& p : route_with_signal.reference_line )
+//   {
+//     if( std::any_of( domain.traffic_signals.begin(), domain.traffic_signals.end(), [&]( const auto& s ) {
+//           return adore::math::distance_2d( s.second, p.second ) < 3.0 && s.second.state != adore_ros2_msgs::msg::TrafficSignal::GREEN;
+//         } ) )
+//       p.second.max_speed = 0;
+//   }
+//   auto traj = planning_tools.planner.plan_route_trajectory( route_with_signal, *domain.vehicle_state, domain.traffic_participants );
+//   traj.adjust_start_time( domain.vehicle_state->time );
+//   traj.label              = "Follow Route";
+//   out.trajectory          = std::move( traj );
+//   out.traffic_participant = make_default_participant( domain, planning_tools );
+//   return out;
+// }
+
 Decision
 follow_route( const Domain& domain, PlanningParams& planning_tools )
 {
+
   Decision out;
-  auto     route_with_signal = domain.route.value();
+  auto route_with_signal = domain.route.value();
+  const auto& ego = *domain.vehicle_state;
+
+  // Bestehende Ampellogik beibehalten
   for( auto& p : route_with_signal.reference_line )
   {
-    if( std::any_of( domain.traffic_signals.begin(), domain.traffic_signals.end(), [&]( const auto& s ) {
-          return adore::math::distance_2d( s.second, p.second ) < 3.0 && s.second.state != adore_ros2_msgs::msg::TrafficSignal::GREEN;
-        } ) )
-      p.second.max_speed = 0;
+    if( std::any_of( domain.traffic_signals.begin(),
+                     domain.traffic_signals.end(),
+                     [&]( const auto& s ) {
+                       return adore::math::distance_2d( s.second, p.second ) < 3.0 &&
+                              s.second.state != adore_ros2_msgs::msg::TrafficSignal::GREEN;
+                     } ) )
+    {
+      p.second.max_speed = 0.0;
+    }
   }
-  auto traj = planning_tools.planner.plan_route_trajectory( route_with_signal, *domain.vehicle_state, domain.traffic_participants );
-  traj.adjust_start_time( domain.vehicle_state->time );
-  traj.label              = "Follow Route";
-  out.trajectory          = std::move( traj );
+
+  const double ego_s = route_with_signal.get_s( ego );
+
+  // Single-blocker bleibt vorerst noch als einfacher Trigger erhalten.
+  auto blocker = planner::find_static_blocker_on_route(
+      route_with_signal,
+      ego,
+      domain.traffic_participants,
+      planning_tools.vehicle_model->params,
+      planning_tools.path_shift );
+
+  // Für Pfad, Stopppunkt und Manöverende aber immer die gesamte aktuelle Objektmenge verwenden.
+  auto obstacles = planner::collect_static_route_obstacles(
+      route_with_signal,
+      ego,
+      domain.traffic_participants,
+      planning_tools.vehicle_model->params,
+      planning_tools.path_shift );
+
+  // -------------------------
+  // State transitions
+  // -------------------------
+  switch( g_avoidance_ctx.state )
+  {
+    case AvoidanceState::FOLLOW_ROUTE:
+    {
+      // maneuver only if a blocker is detected
+      if( blocker.has_value() )
+      {
+        RCLCPP_INFO( rclcpp::get_logger( "DecisionMaker" ), "Blocker detected on route, checking for oncoming traffic..." );
+        // oncoming traffic -> wait
+        if( planner::has_predicted_oncoming_conflict(
+            route_with_signal,
+            ego,
+            domain.traffic_participants,
+            *blocker,
+            planning_tools.path_shift,
+            planning_tools.vehicle_model->params,
+            planning_tools.path_shift.target_speed ) )
+        {
+          RCLCPP_INFO( rclcpp::get_logger( "DecisionMaker" ), "Oncoming conflict detected, waiting..." );
+          g_avoidance_ctx.state = AvoidanceState::WAIT_FOR_ONCOMING;
+          g_avoidance_ctx.has_candidate = true;
+          g_avoidance_ctx.candidate = *blocker;
+        }
+        else
+        {
+          RCLCPP_INFO( rclcpp::get_logger( "DecisionMaker" ), "Static blocker detected -> performing path shift maneuver" );
+          // no conflict -> perform path shift maneuver
+          g_avoidance_ctx.state = AvoidanceState::AVOID_STATIC_OBJECT;
+          g_avoidance_ctx.has_candidate = true;
+          g_avoidance_ctx.candidate = *blocker;
+        }
+      }
+      break;
+    }
+
+    case AvoidanceState::WAIT_FOR_ONCOMING:
+    {
+      if( !blocker.has_value() )
+      {
+        RCLCPP_INFO( rclcpp::get_logger( "DecisionMaker" ), "No more blocker detected, resuming normal route following" );
+        g_avoidance_ctx.state = AvoidanceState::FOLLOW_ROUTE;
+        g_avoidance_ctx.has_candidate = false;
+      }
+      else
+      {
+        g_avoidance_ctx.candidate = *blocker;
+        g_avoidance_ctx.has_candidate = true;
+
+        const bool oncoming_conflict = planner::has_predicted_oncoming_conflict(
+          route_with_signal,
+          ego,
+          domain.traffic_participants,
+          *blocker,
+          planning_tools.path_shift,
+          planning_tools.vehicle_model->params,
+          planning_tools.path_shift.target_speed );
+
+        if( !oncoming_conflict )
+        {
+          RCLCPP_INFO( rclcpp::get_logger( "DecisionMaker" ), "Oncoming conflict cleared, performing path shift maneuver" );
+          g_avoidance_ctx.state = AvoidanceState::AVOID_STATIC_OBJECT;
+        }
+      }
+      break;
+    }
+
+    case AvoidanceState::AVOID_STATIC_OBJECT:
+    {
+      const bool oncoming_conflict = planner::has_predicted_oncoming_conflict(
+      route_with_signal,
+      ego,
+      domain.traffic_participants,
+      g_avoidance_ctx.candidate,
+      planning_tools.path_shift,
+      planning_tools.vehicle_model->params,
+      planning_tools.path_shift.target_speed );
+
+        if( oncoming_conflict )
+        {
+          RCLCPP_INFO( rclcpp::get_logger( "DecisionMaker" ), "Oncoming conflict detected during avoidance, switching to wait" );
+          g_avoidance_ctx.state = AvoidanceState::WAIT_FOR_ONCOMING;
+          break;
+        }
+        
+      if( !g_avoidance_ctx.has_candidate )
+      {
+        RCLCPP_INFO( rclcpp::get_logger( "DecisionMaker" ), "No candidate available, resuming normal route following" );
+        g_avoidance_ctx.state = AvoidanceState::FOLLOW_ROUTE;
+        break;
+      }
+
+      if( obstacles.empty() )
+      {
+        RCLCPP_INFO( rclcpp::get_logger( "DecisionMaker" ), "No more relevant obstacles, resuming normal route following" );
+        g_avoidance_ctx.state = AvoidanceState::FOLLOW_ROUTE;
+        g_avoidance_ctx.has_candidate = false;
+        break;
+      }
+
+      // Ende des Manövers über das letzte aktuell relevante Objekt bestimmen
+      const auto& last_obstacle = obstacles.back();
+      const double dynamic_return_length =
+          std::max( planning_tools.path_shift.return_length,
+                    8.0 * last_obstacle.required_shift );
+      const double active_end_s = last_obstacle.occ_end_s + dynamic_return_length;
+
+      if( ego_s > active_end_s + 2.0 )
+      {
+        RCLCPP_INFO( rclcpp::get_logger( "DecisionMaker" ), "No more relevant obstacles, resuming normal route following" );
+        g_avoidance_ctx.state = AvoidanceState::FOLLOW_ROUTE;
+        g_avoidance_ctx.has_candidate = false;
+      }
+      break;
+    }
+    
+  }
+
+  // -------------------------
+  // WAIT state
+  // -------------------------
+  if( g_avoidance_ctx.state == AvoidanceState::WAIT_FOR_ONCOMING &&
+    g_avoidance_ctx.has_candidate )
+  {
+    auto wait_route = route_with_signal;
+
+    for( auto& [s, mp] : wait_route.reference_line )
+    {
+      if( s >= g_avoidance_ctx.candidate.stop_s )
+        mp.max_speed = 0.0;
+    }
+
+    auto traj = planning_tools.planner.plan_route_trajectory(
+        wait_route,
+        ego,
+        domain.traffic_participants );
+
+    traj.adjust_start_time( ego.time );
+    traj.label = "Wait For Oncoming";
+
+    out.trajectory = std::move( traj );
+    out.traffic_participant = make_default_participant( domain, planning_tools );
+    return out;
+  }
+
+  // -------------------------
+  // AVOID state
+  // -------------------------
+    if( g_avoidance_ctx.state == AvoidanceState::AVOID_STATIC_OBJECT &&
+    g_avoidance_ctx.has_candidate )
+    {
+      if( !obstacles.empty() )
+      {
+        auto shifted_points = planner::build_shifted_path_samples_from_obstacles(
+            route_with_signal,
+            ego_s,
+            planning_tools.path_shift.lookahead_length,
+            0.25,
+            obstacles,
+            planning_tools.path_shift );
+
+        if( shifted_points.size() >= 2 )
+        {
+          auto traj = planner::waypoints_to_trajectory(
+              ego,
+              shifted_points,
+              domain.traffic_participants,
+              *planning_tools.vehicle_model,
+              planning_tools.path_shift.target_speed );
+
+          traj.adjust_start_time( ego.time );
+          traj.label = "Path Shift Envelope";
+
+          out.trajectory = std::move( traj );
+          out.traffic_participant = make_default_participant( domain, planning_tools );
+          return out;
+        }
+      }
+
+    // Falls keine relevanten Objekte mehr vorhanden sind oder die Pfaderzeugung fehlschlägt:
+    // zurück auf Follow Route.
+    g_avoidance_ctx.state = AvoidanceState::FOLLOW_ROUTE;
+    g_avoidance_ctx.has_candidate = false;
+  }
+
+  // -------------------------
+  // Normal Follow Route
+  // -------------------------
+  auto traj = planning_tools.planner.plan_route_trajectory(
+      route_with_signal,
+      ego,
+      domain.traffic_participants );
+
+  traj.adjust_start_time( ego.time );
+  traj.label = "Follow Route";
+
+  out.trajectory = std::move( traj );
   out.traffic_participant = make_default_participant( domain, planning_tools );
   return out;
 }
