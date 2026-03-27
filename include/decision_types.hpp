@@ -161,6 +161,7 @@ load_params( rclcpp::Node& node )
   planning_params.path_shift.front_clearance =
       node.declare_parameter( "path_shift.front_clearance",
                               planning_params.path_shift.front_clearance );
+  
   planning_params.path_shift.rear_clearance =
       node.declare_parameter( "path_shift.rear_clearance",
                               planning_params.path_shift.rear_clearance );
@@ -176,6 +177,7 @@ load_params( rclcpp::Node& node )
   planning_params.path_shift.lookahead_length =
       node.declare_parameter( "path_shift.lookahead_length",
                               planning_params.path_shift.lookahead_length );
+  
   planning_params.path_shift.max_shift_left =
       node.declare_parameter( "path_shift.max_shift_left",
                               planning_params.path_shift.max_shift_left );
@@ -193,36 +195,32 @@ load_params( rclcpp::Node& node )
                               planning_params.path_shift.min_oncoming_angle_diff );
 
 
-  planning_params.path_shift.ego_vehicle_s_margin =
-    node.declare_parameter( "path_shift.ego_vehicle_s_margin",
-                            planning_params.path_shift.ego_vehicle_s_margin );
-
-  planning_params.path_shift.oncoming_vehicle_s_margin =
-      node.declare_parameter( "path_shift.oncoming_vehicle_s_margin",
-                              planning_params.path_shift.oncoming_vehicle_s_margin );
-
+  planning_params.path_shift.prediction_time_step =
+      node.declare_parameter( "path_shift.prediction_time_step",
+                              planning_params.path_shift.prediction_time_step );
+  planning_params.path_shift.prediction_time_horizon =
+      node.declare_parameter( "path_shift.prediction_time_horizon",
+                              planning_params.path_shift.prediction_time_horizon );
+  planning_params.path_shift.min_ego_prediction_speed =
+      node.declare_parameter( "path_shift.min_ego_prediction_speed",
+                              planning_params.path_shift.min_ego_prediction_speed );
+  planning_params.path_shift.min_oncoming_route_speed =
+      node.declare_parameter( "path_shift.min_oncoming_route_speed",
+                              planning_params.path_shift.min_oncoming_route_speed );
   planning_params.path_shift.max_stationary_conflict_route_speed =
       node.declare_parameter( "path_shift.max_stationary_conflict_route_speed",
                               planning_params.path_shift.max_stationary_conflict_route_speed );
 
-  planning_params.path_shift.prediction_time_step =
-      node.declare_parameter( "path_shift.prediction_time_step",
-                              planning_params.path_shift.prediction_time_step );
-
-  planning_params.path_shift.prediction_time_horizon =
-      node.declare_parameter( "path_shift.prediction_time_horizon",
-                              planning_params.path_shift.prediction_time_horizon );
-
-  planning_params.path_shift.min_ego_prediction_speed =
-      node.declare_parameter( "path_shift.min_ego_prediction_speed",
-                              planning_params.path_shift.min_ego_prediction_speed );
-
-  planning_params.path_shift.min_oncoming_route_speed =
-      node.declare_parameter( "path_shift.min_oncoming_route_speed",
-                              planning_params.path_shift.min_oncoming_route_speed );
-
-                              
-
+  planning_params.path_shift.oncoming_vehicle_s_margin =
+      node.declare_parameter( "path_shift.oncoming_vehicle_s_margin",
+                              planning_params.path_shift.oncoming_vehicle_s_margin );
+  planning_params.path_shift.static_oncoming_s_margin =
+    node.declare_parameter( "path_shift.static_oncoming_s_margin",
+                            planning_params.path_shift.static_oncoming_s_margin );
+  planning_params.path_shift.ego_vehicle_s_margin =
+    node.declare_parameter( "path_shift.ego_vehicle_s_margin",
+                            planning_params.path_shift.ego_vehicle_s_margin );
+                       
   // ---------------------------------------------------------------------------------------------------------
   // -------------------------------------------- Domain -----------------------------------------------------
   // ---------------------------------------------------------------------------------------------------------

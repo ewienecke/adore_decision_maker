@@ -77,26 +77,6 @@ follow_reference( const Domain& domain, PlanningParams& planning_tools )
   return out;
 }
 
-// Decision
-// follow_route( const Domain& domain, PlanningParams& planning_tools )
-// {
-//   Decision out;
-//   auto     route_with_signal = domain.route.value();
-//   for( auto& p : route_with_signal.reference_line )
-//   {
-//     if( std::any_of( domain.traffic_signals.begin(), domain.traffic_signals.end(), [&]( const auto& s ) {
-//           return adore::math::distance_2d( s.second, p.second ) < 3.0 && s.second.state != adore_ros2_msgs::msg::TrafficSignal::GREEN;
-//         } ) )
-//       p.second.max_speed = 0;
-//   }
-//   auto traj = planning_tools.planner.plan_route_trajectory( route_with_signal, *domain.vehicle_state, domain.traffic_participants );
-//   traj.adjust_start_time( domain.vehicle_state->time );
-//   traj.label              = "Follow Route";
-//   out.trajectory          = std::move( traj );
-//   out.traffic_participant = make_default_participant( domain, planning_tools );
-//   return out;
-// }
-
 Decision
 follow_route( const Domain& domain, PlanningParams& planning_tools )
 {
@@ -105,7 +85,7 @@ follow_route( const Domain& domain, PlanningParams& planning_tools )
   auto route_with_signal = domain.route.value();
   const auto& ego = *domain.vehicle_state;
 
-  // Bestehende Ampellogik beibehalten
+  // keep existing traffic light logic
   for( auto& p : route_with_signal.reference_line )
   {
     if( std::any_of( domain.traffic_signals.begin(),
@@ -121,7 +101,7 @@ follow_route( const Domain& domain, PlanningParams& planning_tools )
 
   const double ego_s = route_with_signal.get_s( ego );
 
-  // Single-blocker bleibt vorerst noch als einfacher Trigger erhalten.
+  // Single-blocker will remain as a simple trigger for the time being.
   auto blocker = planner::find_static_blocker_on_route(
       route_with_signal,
       ego,
@@ -129,7 +109,7 @@ follow_route( const Domain& domain, PlanningParams& planning_tools )
       planning_tools.vehicle_model->params,
       planning_tools.path_shift );
 
-  // Für Pfad, Stopppunkt und Manöverende aber immer die gesamte aktuelle Objektmenge verwenden.
+  // use the entire current set of objects for path, stop point and maneuver end
   auto obstacles = planner::collect_static_route_obstacles(
       route_with_signal,
       ego,
@@ -239,7 +219,7 @@ follow_route( const Domain& domain, PlanningParams& planning_tools )
         break;
       }
 
-      // Ende des Manövers über das letzte aktuell relevante Objekt bestimmen
+      // Determine the end of the maneuver via the last currently relevant object
       const auto& last_obstacle = obstacles.back();
       const double dynamic_return_length =
           std::max( planning_tools.path_shift.return_length,
@@ -318,8 +298,8 @@ follow_route( const Domain& domain, PlanningParams& planning_tools )
         }
       }
 
-    // Falls keine relevanten Objekte mehr vorhanden sind oder die Pfaderzeugung fehlschlägt:
-    // zurück auf Follow Route.
+    // If no relevant objects are present or path generation fails:
+    // return to Follow Route.
     g_avoidance_ctx.state = AvoidanceState::FOLLOW_ROUTE;
     g_avoidance_ctx.has_candidate = false;
   }
